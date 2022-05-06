@@ -1,0 +1,682 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title id="title">[utokyo-iscg-2022] Basic Assignment M1 (Spline)</title>
+    <script src="https://rawcdn.githack.com/toji/gl-matrix/v3.3.0/dist/gl-matrix-min.js"></script>
+    <script src="https://bbcdn.githack.com/kenshi84/legacygl.js/raw/master/gl-matrix-util.js"></script>
+    <script src="https://bbcdn.githack.com/kenshi84/legacygl.js/raw/master/legacygl.js"></script>
+    <script src="https://bbcdn.githack.com/kenshi84/legacygl.js/raw/master/drawutil.js"></script>
+    <script src="https://bbcdn.githack.com/kenshi84/legacygl.js/raw/master/camera.js"></script>
+    <script src="https://bbcdn.githack.com/kenshi84/legacygl.js/raw/master/util.js"></script>
+    <script src="https://bbcdn.githack.com/kenshi84/legacygl.js/raw/master/glu.js"></script>
+
+    <script
+      type="text/javascript"
+      async
+      src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-MML-AM_CHTML"
+    ></script>
+    <script type="text/x-mathjax-config">
+      MathJax.Hub.Config({
+        TeX: { equationNumbers: { autoNumber: "AMS" }},
+        tex2jax: {
+          inlineMath: [ ['$','$'], ["\\(","\\)"] ],
+          processEscapes: true
+        },
+        "HTML-CSS": { matchFontHeight: false },
+        displayAlign: "left",
+        displayIndent: "2em"
+      });
+    </script>
+    <script type="text/javascript">
+      var gl1, gl2;
+      var canvas1, canvas2;
+      var legacygl1, legacygl2;
+      var drawutil1, drawutil2;
+      var camera1, camera2;
+      var p0, p1, p2;
+      var q = new Array();
+      var selected = null;
+      var numpoints_prev = 3;
+
+      function eval_quadratic_bezier(p0, p1, p2, t) {
+        return vec2.add(
+          [],
+          vec2.scale([], p0, (1 - t) ** 2),
+          vec2.add(
+            [],
+            vec2.scale([], p1, 2 * t * (1 - t)),
+            vec2.scale([], p2, t ** 2)
+          )
+        );
+      }
+
+      function eval_quadratic_bezier_half(p0, p1, p2, b1, t) {
+        var ret = vec2.add(
+          [],
+          vec2.scale([], p0, (1 - t) ** 2),
+          vec2.add(
+            [],
+            vec2.scale([], b1, 2 * t * (1 - t)),
+            vec2.scale([], p2, t ** 2)
+          )
+        );
+        var p_mid = vec2.scale([], vec2.add([], p0, p2), 0.5);
+        if (
+          vec2.cross([], vec2.sub([], p1, p_mid), vec2.sub([], p0, p_mid))[2] *
+            vec2.cross(
+              [],
+              vec2.sub([], p1, p_mid),
+              vec2.sub([], ret, p_mid)
+            )[2] >=
+          0
+        ) {
+          return ret;
+        } else {
+          return p1;
+        }
+      }
+
+      function trig(p0, p1, p2, t) {
+        return (
+          t ** 3 * vec2.dist(p0, p2) ** 2 +
+          3 * t ** 2 * vec2.dot(vec2.sub([], p2, p0), vec2.sub([], p0, p1)) +
+          t *
+            vec2.dot(
+              vec2.sub(
+                [],
+                vec2.sub([], vec2.scale([], p0, 3), vec2.scale([], p1, 2)),
+                p2
+              ),
+              vec2.sub([], p0, p1)
+            ) -
+          vec2.dist(p0, p1) ** 2
+        );
+      }
+
+      function get_interpolation(p0, p1, p2) {
+        var mid = 0.5;
+        var left = 0.0;
+        var right = 1.0;
+        for (var x = 0; x < 1000; x++) {
+          var x1 = trig(p0, p1, p2, left);
+          var x2 = trig(p0, p1, p2, right);
+          if (trig(p0, p1, p2, mid) * x1 > 0) {
+            left = mid;
+            mid = (left + right) / 2;
+          } else {
+            right = mid;
+            mid = (left + right) / 2;
+          }
+        }
+        return [
+          mid,
+          vec2.scale(
+            [],
+            vec2.sub(
+              [],
+              vec2.sub([], p1, vec2.scale([], p0, (1 - mid) ** 2)),
+              vec2.scale([], p2, mid ** 2)
+            ),
+            1 / (2 * (1 - mid) * mid)
+          ),
+        ];
+      }
+
+      function draw() {
+        gl1.clear(gl1.COLOR_BUFFER_BIT | gl1.DEPTH_BUFFER_BIT);
+        gl2.clear(gl2.COLOR_BUFFER_BIT | gl2.DEPTH_BUFFER_BIT);
+        // projection & camera position
+        mat4.perspective(
+          legacygl1.uniforms.projection.value,
+          Math.PI / 6,
+          canvas1.aspect_ratio(),
+          0.1,
+          1000
+        );
+        mat4.perspective(
+          legacygl2.uniforms.projection.value,
+          Math.PI / 6,
+          canvas2.aspect_ratio(),
+          0.1,
+          1000
+        );
+        var modelview1 = legacygl1.uniforms.modelview;
+        camera1.lookAt(modelview1.value);
+        var modelview2 = legacygl2.uniforms.modelview;
+        camera2.lookAt(modelview2.value);
+
+        // xy grid
+        gl1.lineWidth(1);
+        legacygl1.color(0.5, 0.5, 0.5);
+        drawutil1.xygrid(100);
+        gl2.lineWidth(1);
+        legacygl2.color(0.5, 0.5, 0.5);
+        drawutil2.xygrid(100);
+
+        // draw line segments composing curve
+        legacygl1.color(1, 0.6, 0.2);
+        legacygl1.begin(gl1.LINE_STRIP);
+        legacygl2.color(1, 0.6, 0.2);
+        legacygl2.begin(gl2.LINE_STRIP);
+        var numsteps1 = Number(
+          document.getElementById("1/input_numsteps").value
+        );
+        var numsteps2 = Number(
+          document.getElementById("2/input_numsteps").value
+        );
+        var numpoints2 = Number(
+          document.getElementById("2/input_numpoints").value
+        );
+
+        if (numpoints2 != numpoints_prev) {
+          if (numpoints_prev < numpoints2) {
+            q[q.length] = [0.2 * numpoints2 - 1.0, 0.2 * numpoints2 - 1.0];
+          }
+          numpoints_prev = numpoints2;
+        }
+
+        for (var i = 0; i <= numsteps1; ++i) {
+          var t = i / numsteps1;
+          legacygl1.vertex2(eval_quadratic_bezier(p0, p1, p2, t));
+        }
+        legacygl1.end();
+
+        var t1, t2, b1, b2;
+        [t1, b1] = get_interpolation(q[0], q[1], q[2]);
+        for (var j = 0; j <= numsteps2; ++j) {
+          var t = j / numsteps2;
+          legacygl2.vertex2(
+            eval_quadratic_bezier_half(q[0], q[1], q[2], b1, t)
+          );
+        }
+        legacygl2.end();
+        legacygl2.begin(gl2.LINE_STRIP);
+        [t2, b2] = get_interpolation(
+          q[numpoints2 - 1],
+          q[numpoints2 - 2],
+          q[numpoints2 - 3]
+        );
+        for (var j = 0; j <= numsteps2; ++j) {
+          var t = j / numsteps2;
+          legacygl2.vertex2(
+            eval_quadratic_bezier_half(
+              q[numpoints2 - 1],
+              q[numpoints2 - 2],
+              q[numpoints2 - 3],
+              b2,
+              t
+            )
+          );
+        }
+        legacygl2.end();
+        legacygl2.begin(gl2.LINE_STRIP);
+        for (var i = 0; i < numpoints2 - 3; ++i) {
+          [t1, b1] = get_interpolation(q[i], q[i + 1], q[i + 2]);
+          [t2, b2] = get_interpolation(q[i + 1], q[i + 2], q[i + 3]);
+          for (var j = 0; j <= numsteps2; ++j) {
+            var theta = ((j / numsteps2) * Math.PI) / 2;
+            legacygl2.vertex2(
+              vec2.add(
+                [],
+                vec2.scale(
+                  [],
+                  eval_quadratic_bezier(
+                    q[i],
+                    b1,
+                    q[i + 2],
+                    t1 + (2 * theta * (1 - t1)) / Math.PI
+                  ),
+                  Math.cos(theta) ** 2
+                ),
+                vec2.scale(
+                  [],
+                  eval_quadratic_bezier(
+                    q[i + 1],
+                    b2,
+                    q[i + 3],
+                    (2 * t2 * theta) / Math.PI
+                  ),
+                  Math.sin(theta) ** 2
+                )
+              )
+            );
+          }
+        }
+        legacygl2.end();
+        if (document.getElementById("1/input_show_samplepoints").checked) {
+          legacygl1.begin(gl1.POINTS);
+          for (var i = 0; i <= numsteps1; ++i) {
+            var t = i / numsteps1;
+            legacygl1.vertex2(eval_quadratic_bezier(p0, p1, p2, t));
+          }
+          legacygl1.end();
+        }
+        if (document.getElementById("2/input_show_samplepoints").checked) {
+          legacygl2.begin(gl2.POINTS);
+
+          [t1, b1] = get_interpolation(q[0], q[1], q[2]);
+          for (var j = 0; j <= numsteps2; ++j) {
+            var t = j / numsteps2;
+            legacygl2.vertex2(
+              eval_quadratic_bezier_half(q[0], q[1], q[2], b1, t)
+            );
+          }
+          legacygl2.end();
+          legacygl2.begin(gl2.POINTS);
+          [t2, b2] = get_interpolation(
+            q[numpoints2 - 1],
+            q[numpoints2 - 2],
+            q[numpoints2 - 3]
+          );
+          for (var j = 0; j <= numsteps2; ++j) {
+            var t = j / numsteps2;
+            legacygl2.vertex2(
+              eval_quadratic_bezier_half(
+                q[numpoints2 - 1],
+                q[numpoints2 - 2],
+                q[numpoints2 - 3],
+                b2,
+                t
+              )
+            );
+          }
+          legacygl2.end();
+          legacygl2.begin(gl2.POINTS);
+          for (var i = 0; i < numpoints2 - 3; ++i) {
+            [t1, b1] = get_interpolation(q[i], q[i + 1], q[i + 2]);
+            [t2, b2] = get_interpolation(q[i + 1], q[i + 2], q[i + 3]);
+            for (var j = 0; j <= numsteps2; ++j) {
+              var theta = ((j / numsteps2) * Math.PI) / 2;
+              legacygl2.vertex2(
+                vec2.add(
+                  [],
+                  vec2.scale(
+                    [],
+                    eval_quadratic_bezier(
+                      q[i],
+                      b1,
+                      q[i + 2],
+                      t1 + (2 * theta * (1 - t1)) / Math.PI
+                    ),
+                    Math.cos(theta) ** 2
+                  ),
+                  vec2.scale(
+                    [],
+                    eval_quadratic_bezier(
+                      q[i + 1],
+                      b2,
+                      q[i + 3],
+                      (2 * t2 * theta) / Math.PI
+                    ),
+                    Math.sin(theta) ** 2
+                  )
+                )
+              );
+            }
+          }
+          // for (var i = 0; i < numpoints2 - 2; ++i) {
+          //   var b1 = get_interpolation(q[i], q[i + 1], q[i + 2]);
+          //   for (var j = 0; j <= numsteps2; ++j) {
+          //     var t = j / numsteps2;
+          //     legacygl2.vertex2(
+          //       eval_quadratic_bezier_half(q[i], q[i + 1], q[i + 2], b1, t)
+          //     );
+          //   }
+          // }
+          legacygl2.end();
+        }
+        // draw control points
+        if (document.getElementById("1/input_show_controlpoints").checked) {
+          legacygl1.color(0.2, 0.5, 1);
+          legacygl1.begin(gl1.LINE_STRIP);
+          legacygl1.vertex2(p0);
+          legacygl1.vertex2(p1);
+          legacygl1.vertex2(p2);
+          legacygl1.end();
+          legacygl1.begin(gl1.POINTS);
+          legacygl1.vertex2(p0);
+          legacygl1.vertex2(p1);
+          legacygl1.vertex2(p2);
+          legacygl1.end();
+        }
+        if (document.getElementById("2/input_show_controlpoints").checked) {
+          legacygl2.color(0.2, 0.5, 1);
+          legacygl2.begin(gl2.LINE_STRIP);
+          for (var i = 0; i < numpoints2; ++i) {
+            legacygl2.vertex2(q[i]);
+          }
+          legacygl2.end();
+          legacygl2.begin(gl2.POINTS);
+          for (var i = 0; i < numpoints2; ++i) {
+            legacygl2.vertex2(q[i]);
+          }
+          legacygl2.end();
+        }
+      }
+      function init() {
+        // OpenGL context
+        canvas1 = document.getElementById("1/canvas");
+        canvas2 = document.getElementById("2/canvas");
+        gl1 = canvas1.getContext("experimental-webgl");
+        gl2 = canvas2.getContext("experimental-webgl");
+        if (!gl1 || !gl2) alert("Could not initialise WebGL, sorry :-(");
+        var vertex_shader_src =
+          "\
+        attribute vec3 a_vertex;\
+        attribute vec3 a_color;\
+        varying vec3 v_color;\
+        uniform mat4 u_modelview;\
+        uniform mat4 u_projection;\
+        void main(void) {\
+            gl_Position = u_projection * u_modelview * vec4(a_vertex, 1.0);\
+            v_color = a_color;\
+            gl_PointSize = 5.0;\
+        }\
+        ";
+        var fragment_shader_src =
+          "\
+        precision mediump float;\
+        varying vec3 v_color;\
+        void main(void) {\
+            gl_FragColor = vec4(v_color, 1.0);\
+        }\
+        ";
+        legacygl1 = get_legacygl(gl1, vertex_shader_src, fragment_shader_src);
+        legacygl1.add_uniform("modelview", "Matrix4f");
+        legacygl1.add_uniform("projection", "Matrix4f");
+        legacygl1.add_vertex_attribute("color", 3);
+        legacygl1.vertex2 = function (p) {
+          this.vertex(p[0], p[1], 0);
+        };
+        legacygl2 = get_legacygl(gl2, vertex_shader_src, fragment_shader_src);
+        legacygl2.add_uniform("modelview", "Matrix4f");
+        legacygl2.add_uniform("projection", "Matrix4f");
+        legacygl2.add_vertex_attribute("color", 3);
+        legacygl2.vertex2 = function (p) {
+          this.vertex(p[0], p[1], 0);
+        };
+        drawutil1 = get_drawutil(gl1, legacygl1);
+        drawutil2 = get_drawutil(gl1, legacygl2);
+        camera1 = get_camera(canvas1.width);
+        camera1.eye = [0, 0, 7];
+        camera2 = get_camera(canvas2.width);
+        camera2.eye = [0, 0, 7];
+        p0 = [-0.5, -0.6];
+        p1 = [1.2, 0.5];
+        p2 = [-0.4, 1.3];
+        q = [
+          [-0.5, -0.6],
+          [1.2, 0.5],
+          [-0.4, 1.3],
+        ];
+        // event handlers
+        canvas1.onmousedown = function (evt) {
+          var mouse_win = this.get_mousepos(evt);
+          if (evt.altKey) {
+            camera1.start_moving(mouse_win, evt.shiftKey ? "zoom" : "pan");
+            return;
+          }
+          // pick nearest object
+          var points = [p0, p1, p2];
+          var viewport = [0, 0, canvas1.width, canvas1.height];
+          var dist_min = 10000000;
+          for (var i = 0; i < 3; ++i) {
+            var object_win = glu.project(
+              [points[i][0], points[i][1], 0],
+              legacygl1.uniforms.modelview.value,
+              legacygl1.uniforms.projection.value,
+              viewport
+            );
+            var dist = vec2.dist(mouse_win, object_win);
+            if (dist < dist_min) {
+              dist_min = dist;
+              selected = points[i];
+            }
+          }
+        };
+        canvas2.onmousedown = function (evt) {
+          var mouse_win = this.get_mousepos(evt);
+          if (evt.altKey) {
+            camera2.start_moving(mouse_win, evt.shiftKey ? "zoom" : "pan");
+            return;
+          }
+          // pick nearest object
+          var points = q;
+          var viewport = [0, 0, canvas2.width, canvas2.height];
+          var dist_min = 10000000;
+          for (var i = 0; i < points.length; ++i) {
+            var object_win = glu.project(
+              [points[i][0], points[i][1], 0],
+              legacygl2.uniforms.modelview.value,
+              legacygl2.uniforms.projection.value,
+              viewport
+            );
+            var dist = vec2.dist(mouse_win, object_win);
+            if (dist < dist_min) {
+              dist_min = dist;
+              selected = points[i];
+            }
+          }
+        };
+        canvas1.onmousemove = function (evt) {
+          var mouse_win = this.get_mousepos(evt);
+          if (camera1.is_moving()) {
+            camera1.move(mouse_win);
+            draw();
+            return;
+          }
+          if (selected != null) {
+            var viewport = [0, 0, canvas1.width, canvas1.height];
+            mouse_win.push(1);
+            var mouse_obj = glu.unproject(
+              mouse_win,
+              legacygl1.uniforms.modelview.value,
+              legacygl1.uniforms.projection.value,
+              viewport
+            );
+            // just reuse the same code as the 3D case
+            var plane_origin = [0, 0, 0];
+            var plane_normal = [0, 0, 1];
+            var eye_to_mouse = vec3.sub([], mouse_obj, camera1.eye);
+            var eye_to_origin = vec3.sub([], plane_origin, camera1.eye);
+            var s1 = vec3.dot(eye_to_mouse, plane_normal);
+            var s2 = vec3.dot(eye_to_origin, plane_normal);
+            var eye_to_intersection = vec3.scale([], eye_to_mouse, s2 / s1);
+            vec3.add(selected, camera1.eye, eye_to_intersection);
+            draw();
+          }
+        };
+        canvas2.onmousemove = function (evt) {
+          var mouse_win = this.get_mousepos(evt);
+          if (camera2.is_moving()) {
+            camera2.move(mouse_win);
+            draw();
+            return;
+          }
+          if (selected != null) {
+            var viewport = [0, 0, canvas2.width, canvas2.height];
+            mouse_win.push(1);
+            var mouse_obj = glu.unproject(
+              mouse_win,
+              legacygl2.uniforms.modelview.value,
+              legacygl2.uniforms.projection.value,
+              viewport
+            );
+            // just reuse the same code as the 3D case
+            var plane_origin = [0, 0, 0];
+            var plane_normal = [0, 0, 1];
+            var eye_to_mouse = vec3.sub([], mouse_obj, camera2.eye);
+            var eye_to_origin = vec3.sub([], plane_origin, camera2.eye);
+            var s1 = vec3.dot(eye_to_mouse, plane_normal);
+            var s2 = vec3.dot(eye_to_origin, plane_normal);
+            var eye_to_intersection = vec3.scale([], eye_to_mouse, s2 / s1);
+            vec3.add(selected, camera2.eye, eye_to_intersection);
+            draw();
+          }
+        };
+        document.onmouseup = function (evt) {
+          if (camera1.is_moving()) {
+            camera1.finish_moving();
+            return;
+          }
+          if (camera2.is_moving()) {
+            camera2.finish_moving();
+            return;
+          }
+          selected = null;
+        };
+        // init OpenGL settings
+        gl1.viewport(0, 0, canvas1.width, canvas1.height);
+        gl1.clearColor(1, 1, 1, 1);
+        gl2.viewport(0, 0, canvas2.width, canvas2.height);
+        gl2.clearColor(1, 1, 1, 1);
+      }
+    </script>
+  </head>
+  <body onload="init(); draw();">
+    <h2>
+      <script type="text/javascript">
+        document.write(document.getElementById("title").innerHTML);
+      </script>
+    </h2>
+    <h3>Quadratic Bézier Curve</h3>
+    <p>
+      3点$P_0, P_1, P_2$に対して、パラメータ$t \in [0, 1]$を用いて$t (1 - t) ^ 2
+      * P_0 + 2t(1 - t) * P_1 + t ^ 2 * P_2$と表される曲線。
+    </p>
+    <canvas
+      id="1/canvas"
+      width="640"
+      height="480"
+      style="border: 1px solid #000000"
+    ></canvas>
+    <table>
+      <tr>
+        <td>Number of Steps:</td>
+        <td colspan="2">
+          <input
+            type="number"
+            id="1/input_numsteps"
+            onchange="draw();"
+            step="1"
+            min="2"
+            value="20"
+          />
+        </td>
+      </tr>
+      <tr>
+        <td>Show Control Points:</td>
+        <td colspan="2">
+          <input
+            type="checkbox"
+            id="1/input_show_controlpoints"
+            onchange="draw();"
+            checked
+          />
+        </td>
+      </tr>
+      <tr>
+        <td>Show Sample Points:</td>
+        <td colspan="2">
+          <input
+            type="checkbox"
+            id="1/input_show_samplepoints"
+            onchange="draw();"
+            checked
+          />
+        </td>
+      </tr>
+    </table>
+    <h3>
+      <a href="https://dl.acm.org/doi/10.1145/3400301"
+        >C^2 Interpolating Spline</a
+      >
+      with Bézier Interpolation Function
+    </h3>
+    <p>
+      4点$P_0, P_1, P_2, P_3$を考える。 3点$P_0, P_1,
+      P_2$に対して、$F_1(\theta)$を
+    </p>
+    <ul>
+      <li>$F_1(0) = P_0$</li>
+      <li>$F_1(\frac{\pi}{2}) = P_1$</li>
+      <li>$F_1(\pi) = P_2$</li>
+    </ul>
+    <p>
+      となり、$P_1$で曲率が極大となるような Bézier 曲線とする。 また、$P_1, P_2,
+      P_3$に対して同様に曲線$F_2(\theta)$を定義する。このとき、$P_1,P_2$間が$\cos^2(\theta)
+      F_1(\theta + \frac{\pi}{2}) + \sin^2(\theta)
+      F_2(\frac{\pi}{2})$で表される曲線。
+    </p>
+
+    <canvas
+      id="2/canvas"
+      width="640"
+      height="480"
+      style="border: 1px solid #000000"
+    ></canvas>
+    <table>
+      <tr>
+        <td>Number of Points:</td>
+        <td colspan="2">
+          <input
+            type="number"
+            id="2/input_numpoints"
+            onchange="draw();"
+            step="1"
+            min="3"
+            value="3"
+          />
+        </td>
+      </tr>
+      <tr>
+        <td>Number of Steps:</td>
+        <td colspan="2">
+          <input
+            type="number"
+            id="2/input_numsteps"
+            onchange="draw();"
+            step="1"
+            min="2"
+            value="20"
+          />
+        </td>
+      </tr>
+      <tr>
+        <td>Show Control Points:</td>
+        <td colspan="2">
+          <input
+            type="checkbox"
+            id="2/input_show_controlpoints"
+            onchange="draw();"
+            checked
+          />
+        </td>
+      </tr>
+      <tr>
+        <td>Show Sample Points:</td>
+        <td colspan="2">
+          <input
+            type="checkbox"
+            id="2/input_show_samplepoints"
+            onchange="draw();"
+            checked
+          />
+        </td>
+      </tr>
+    </table>
+    <h3>Usage:</h3>
+    <ul>
+      <li>Drag: Move Control Points</li>
+      <li>Alt+Drag: Camera Pan</li>
+      <li>Alt+Shift+drag: Camera Zoom</li>
+    </ul>
+
+    <div
+      class="glitchButton"
+      style="position: fixed; top: 20px; right: 20px"
+    ></div>
+    <script src="https://button.glitch.me/button.js"></script>
+  </body>
+</html>
