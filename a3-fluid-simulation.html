@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title id="title">[utokyo-iscg-2022] Advanced Assignment A3 (Fluid simulation)</title>
+  </head>
+  <body>
+    <h2><script type="text/javascript">document.write(document.getElementById("title").innerHTML);</script></h2>
+    <p>Simulation: <span id="simTime">XX</span> [ms]</p>
+    <p>Drawing: <span id="drawTime">XX</span> [ms]</p>
+    <canvas id="myCanvas" width="800" height="800" style="border: 2px solid #eeeeee;"></canvas>
+
+    <script src="a3-assets/js-colormaps.js"></script>
+    <script src="a3-assets/canvas-toBlob.js"></script>
+    <script src="a3-assets/FileSaver.js"></script>
+    <script src="a3-assets/2d-fluid.js"></script>
+    <script>
+      start();
+    </script>
+
+    <div class="glitchButton" style="position:fixed;top:20px;right:20px;"></div>
+    <script src="https://button.glitch.me/button.js"></script>
+  </body>
+</html>
