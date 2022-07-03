@@ -90,9 +90,7 @@
                   var g1 = original[4 * idx1 + 1];
                   var b1 = original[4 * idx1 + 2];
                   var w_range = Math.exp(
-                    Math.sqrt(
-                      (r0 - r1) ** 2 + (g0 - g1) ** 2 + (b0 - b1) ** 2
-                    ) /
+                    -((r0 - r1) ** 2 + (g0 - g1) ** 2 + (b0 - b1) ** 2) /
                       (2 * sigma_range * sigma_range)
                   );
                   var w = w_space * w_range;
