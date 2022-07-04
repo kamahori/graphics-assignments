@@ -6,3 +6,4 @@
 - [R1 Raytracing1](https://www.shadertoy.com/view/ss3Bzr)
 - [R2 Raytracing2](https://www.shadertoy.com/view/fstBzn)
 - [I1 Bilateral Filter](./i1-bilateral-filter.html)
+- [I2 Poisson Image Editing](./i2-image-editing.html)
