@@ -139,6 +139,22 @@
       ];
     }
 
+    function max(color0, color1) {
+      return [
+        Math.max(color0[0], color1[0]),
+        Math.max(color0[1], color1[1]),
+        Math.max(color0[2], color1[2]),
+      ];
+    }
+
+    function min(color0, color1) {
+      return [
+        Math.min(color0[0], color1[0]),
+        Math.min(color0[1], color1[1]),
+        Math.min(color0[2], color1[2]),
+      ];
+    }
+
     function scale(color, s) {
       return [s * color[0], s * color[1], s * color[2]];
     }
@@ -538,24 +554,20 @@
             var val = scale(sub(sum, get_color(rhs.fdata, rhs_idx)), 0.25);
 
             var sum2 = [0, 0, 0];
-            sum2 = add(sum2, get_color(result.fdata, src_idx + 1));
-            sum2 = add(sum2, get_color(result.fdata, src_idx - 1));
-            sum2 = add(sum2, get_color(result.fdata, src_idx + src_width));
-            sum2 = add(sum2, get_color(result.fdata, src_idx - src_width));
+            sum2 = add(sum2, get_color(target.data, tgt_idx + 1));
+            sum2 = add(sum2, get_color(target.data, tgt_idx - 1));
+            sum2 = add(sum2, get_color(target.data, tgt_idx + tgt_width));
+            sum2 = add(sum2, get_color(target.data, tgt_idx - tgt_width));
 
-            var rhs_idx2 = src_i - 1 + (src_width - 2) * (src_j - 1);
+            var rhs_idx2 = src_i - 1 + (tgt_width - 2) * (tgt_j - 1);
             var val2 = scale(sub(sum2, get_color(rhs.fdata, rhs_idx2)), 0.25);
 
             if (gradient_mode.value == "max") {
-              if (val < val2) {
-                val = val2;
-              }
+              val = max(val, val2);
             } else if (gradient_mode.value == "min") {
-              if (val > val2) {
-                val = val2;
-              }
+              val = min(val, val2);
             } else if (gradient_mode.value == "add") {
-              val += val2;
+              val = scale(add(val, val2), 0.5);
             }
 
             set_color(result.fdata, tgt_idx, val);
